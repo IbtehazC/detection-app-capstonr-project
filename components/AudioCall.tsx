@@ -88,8 +88,7 @@ const AudioCall = () => {
   };
 
   const convertToWavAndSend = async (webmBlob: Blob) => {
-    const audioContext = new (window.AudioContext ||
-      window.webkitAudioContext)();
+    const audioContext = new window.AudioContext();
     const arrayBuffer = await webmBlob.arrayBuffer();
     const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
