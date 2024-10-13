@@ -1,7 +1,7 @@
 import { useRef, useEffect } from "react";
 
 interface AudioVisualizerProps {
-  stream: MediaStream;
+  stream: MediaStream | null;
 }
 
 const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ stream }) => {
@@ -12,8 +12,10 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ stream }) => {
 
     const audioContext = new AudioContext();
     const analyser = audioContext.createAnalyser();
-    const source = audioContext.createMediaStreamSource(stream);
-    source.connect(analyser);
+    if (stream) {
+      const source = audioContext.createMediaStreamSource(stream);
+      source.connect(analyser);
+    }
 
     analyser.fftSize = 256;
     const bufferLength = analyser.frequencyBinCount;
@@ -50,10 +52,6 @@ const AudioVisualizer: React.FC<AudioVisualizerProps> = ({ stream }) => {
     }
 
     draw();
-
-    return () => {
-      source.disconnect();
-    };
   }, [stream]);
 
   return (
