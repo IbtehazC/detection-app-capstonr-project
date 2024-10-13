@@ -18,6 +18,20 @@ const AudioCall = () => {
   const [detectionResult, setDetectionResult] = useState<{
     probability: number;
   } | null>(null);
+  const localAudioRef = useRef<HTMLAudioElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
+
+  useEffect(() => {
+    if (localStream && localAudioRef.current) {
+      localAudioRef.current.srcObject = localStream;
+    }
+  }, [localStream]);
+
+  useEffect(() => {
+    if (peer && peer.stream && remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = peer.stream;
+    }
+  }, [peer]);
 
   useEffect(() => {
     if (localStream) {
@@ -146,6 +160,15 @@ const AudioCall = () => {
         <CardTitle>Audio Call</CardTitle>
       </CardHeader>
       <CardContent>
+        <audio
+          ref={localAudioRef}
+          autoPlay
+          muted
+        />
+        <audio
+          ref={remoteAudioRef}
+          autoPlay
+        />
         <div className="mb-4">
           <AudioVisualizer stream={localStream} />
           {peer && peer.stream && <AudioVisualizer stream={peer.stream} />}
