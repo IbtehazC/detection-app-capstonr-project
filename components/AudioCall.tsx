@@ -7,10 +7,18 @@ import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Mic, MicOff, PhoneOff } from "lucide-react";
 import AudioVisualizer from "./AudioVisualizer";
+import CallingScreen from "./CallingScreen";
 
 const AudioCall = () => {
-  const { localStream, peer, isCallEnded, ongoingCall, handleHangup } =
-    useSocket();
+  const {
+    localStream,
+    peer,
+    isCallEnded,
+    ongoingCall,
+    handleHangup,
+    isWaitingForAnswer,
+    isCaller,
+  } = useSocket();
   const [isMicOn, setIsMicOn] = useState(true);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
@@ -55,7 +63,7 @@ const AudioCall = () => {
 
     const startNewRecording = () => {
       const mediaRecorder = new MediaRecorder(localStream, {
-        mimeType: "audio/webm",
+        mimeType: "audio/webm;codecs=opus", // Specify codec explicitly
       });
       mediaRecorderRef.current = mediaRecorder;
       audioChunksRef.current = [];
@@ -68,7 +76,7 @@ const AudioCall = () => {
 
       mediaRecorder.onstop = () => {
         const audioBlob = new Blob(audioChunksRef.current, {
-          type: "audio/webm",
+          type: "audio/webm;codecs=opus",
         });
         convertToWavAndSend(audioBlob);
       };
@@ -102,14 +110,24 @@ const AudioCall = () => {
   };
 
   const convertToWavAndSend = async (webmBlob: Blob) => {
-    const audioContext = new window.AudioContext();
-    const arrayBuffer = await webmBlob.arrayBuffer();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    try {
+      const audioContext = new window.AudioContext();
+      const arrayBuffer = await webmBlob.arrayBuffer();
 
-    const wavBuffer = audioBufferToWav(audioBuffer);
-    const wavBlob = new Blob([wavBuffer], { type: "audio/wav" });
-
-    sendAudioToServer(wavBlob);
+      // Add error handling for decodeAudioData
+      try {
+        const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+        const wavBuffer = audioBufferToWav(audioBuffer);
+        const wavBlob = new Blob([wavBuffer], { type: "audio/wav" });
+        await sendAudioToServer(wavBlob);
+      } catch (decodeError) {
+        console.error("Error decoding audio:", decodeError);
+        // Send the original WebM blob if decoding fails
+        await sendAudioToServer(webmBlob);
+      }
+    } catch (error) {
+      console.error("Error in audio conversion:", error);
+    }
   };
 
   const sendAudioToServer = async (audioBlob: Blob) => {
@@ -117,13 +135,10 @@ const AudioCall = () => {
     formData.append("file", audioBlob, `recording_${Date.now()}.wav`);
 
     try {
-      const response = await fetch(
-        "https://audio-deepfake-detection-793528715646.australia-southeast1.run.app/predict",
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
+      const response = await fetch("http://192.168.1.246:5000/predict", {
+        method: "POST",
+        body: formData,
+      });
 
       if (!response.ok) {
         throw new Error("Failed to upload audio");
@@ -152,63 +167,102 @@ const AudioCall = () => {
     return <div className="mt-5 text-rose-500">Call Ended</div>;
   }
 
+  // Only show calling screen if this user is the caller and waiting for answer
+  if (isWaitingForAnswer && isCaller && ongoingCall) {
+    return (
+      <CallingScreen
+        receiver={ongoingCall.participants.receiver}
+        onCancel={() => handleHangup({ ongoingCall })}
+      />
+    );
+  }
+
   if (!localStream && !peer) return null;
 
-  return (
-    <Card className="w-full max-w-md mx-auto">
-      <CardHeader>
-        <CardTitle>Audio Call</CardTitle>
-      </CardHeader>
-      <CardContent>
-        <audio
-          ref={localAudioRef}
-          autoPlay
-          muted
-        />
-        <audio
-          ref={remoteAudioRef}
-          autoPlay
-        />
-        <div className="mb-4">
-          <AudioVisualizer stream={localStream} />
-          {peer && peer.stream && <AudioVisualizer stream={peer.stream} />}
-        </div>
-        <div className="flex justify-center space-x-4 mb-6">
-          <Button
-            variant={isMicOn ? "default" : "secondary"}
-            onClick={toggleAudio}
-          >
-            {isMicOn ? <Mic /> : <MicOff />}
-          </Button>
-          <Button
-            variant="destructive"
-            onClick={() => {
-              stopRecording();
-              handleHangup({
-                ongoingCall: ongoingCall ? ongoingCall : undefined,
-              });
-            }}
-          >
-            <PhoneOff />
-          </Button>
-        </div>
-        {detectionResult && (
-          <div>
-            <h3 className="text-lg font-semibold mb-2">
-              Deep Fake Probability
-            </h3>
-            <Progress
-              value={detectionResult.probability * 100}
-              className="w-full"
-            />
-            <p className="text-sm text-gray-500 mt-1">
-              {(detectionResult.probability * 100).toFixed(2)}%
-            </p>
+  if (localStream || peer) {
+    return (
+      <Card className="w-full max-w-md mx-auto">
+        <CardHeader>
+          <CardTitle>
+            Audio Call with{" "}
+            {isCaller
+              ? ongoingCall?.participants.receiver.profile.fullName
+              : ongoingCall?.participants.caller.profile.fullName}
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <audio
+            ref={localAudioRef}
+            autoPlay
+            muted
+          />
+          <audio
+            ref={remoteAudioRef}
+            autoPlay
+          />
+          <div className="mb-4 space-y-4">
+            <div className="relative">
+              <div className="absolute top-2 left-2 text-xs text-gray-500">
+                Your Audio
+              </div>
+              <AudioVisualizer stream={localStream} />
+            </div>
+            {peer && peer.stream && (
+              <div className="relative">
+                <div className="absolute top-2 left-2 text-xs text-gray-500">
+                  Remote Audio
+                </div>
+                <AudioVisualizer stream={peer.stream} />
+              </div>
+            )}
           </div>
-        )}
-      </CardContent>
-    </Card>
-  );
+          <div className="flex justify-center space-x-4 mb-6">
+            <Button
+              variant={isMicOn ? "default" : "secondary"}
+              onClick={toggleAudio}
+              className="w-12 h-12"
+            >
+              {isMicOn ? (
+                <Mic className="h-6 w-6" />
+              ) : (
+                <MicOff className="h-6 w-6" />
+              )}
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                stopRecording();
+                handleHangup({
+                  ongoingCall: ongoingCall ? ongoingCall : undefined,
+                });
+              }}
+              className="w-12 h-12"
+            >
+              <PhoneOff className="h-6 w-6" />
+            </Button>
+          </div>
+          {detectionResult && (
+            <div className="bg-gray-50 p-4 rounded-lg">
+              <h3 className="text-lg font-semibold mb-2">Deep Fake Analysis</h3>
+              <Progress
+                value={detectionResult.probability * 100}
+                className="w-full h-2"
+              />
+              <div className="flex justify-between mt-2 text-sm text-gray-600">
+                <span>Authentic</span>
+                <span className="font-medium">
+                  {(detectionResult.probability * 100).toFixed(1)}%
+                </span>
+                <span>Deep Fake</span>
+              </div>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return null;
 };
 
 // Helper function to convert AudioBuffer to WAV format

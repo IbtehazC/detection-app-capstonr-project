@@ -2,6 +2,7 @@ import { io } from "../server.js";
 
 const onHangup = async (hangupData) => {
   let socketIdToEmitTo;
+
   if (
     hangupData.ongoingCall.participants.caller.userId ===
     hangupData.userHangingupId
@@ -12,7 +13,10 @@ const onHangup = async (hangupData) => {
   }
 
   if (socketIdToEmitTo) {
-    io.to(socketIdToEmitTo).emit("hangup");
+    io.to(socketIdToEmitTo).emit("hangup", {
+      callEnded: true,
+      ongoingCall: hangupData.ongoingCall,
+    });
   }
 };
 

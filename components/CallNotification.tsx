@@ -1,6 +1,8 @@
 "use client";
 
 import { useSocket } from "@/context/SocketContext";
+import { useUser } from "@clerk/nextjs";
+import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -8,11 +10,24 @@ import { Phone, PhoneOff } from "lucide-react";
 
 const CallNotification = () => {
   const { ongoingCall, handleJoinCall, handleHangup } = useSocket();
+  const { user } = useUser();
+  const router = useRouter();
 
-  if (!ongoingCall?.isRinging) return null;
+  if (
+    !ongoingCall?.isRinging ||
+    !user ||
+    ongoingCall.participants.receiver.userId !== user.id
+  ) {
+    return null;
+  }
+
+  const handleAcceptCall = async () => {
+    await handleJoinCall(ongoingCall);
+    router.push("/calls");
+  };
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center">
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <Card className="w-full max-w-sm">
         <CardHeader>
           <CardTitle>Incoming Audio Call</CardTitle>
@@ -32,13 +47,15 @@ const CallNotification = () => {
           <div className="flex space-x-4">
             <Button
               variant="default"
-              onClick={() => handleJoinCall(ongoingCall)}
+              onClick={handleAcceptCall}
+              className="min-w-[120px]"
             >
               <Phone className="mr-2 h-4 w-4" /> Accept
             </Button>
             <Button
               variant="destructive"
               onClick={() => handleHangup({ ongoingCall })}
+              className="min-w-[120px]"
             >
               <PhoneOff className="mr-2 h-4 w-4" /> Decline
             </Button>
