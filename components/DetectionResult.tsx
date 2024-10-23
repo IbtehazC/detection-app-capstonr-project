@@ -122,16 +122,6 @@ const DetectionResult = ({
           <span>Synthetic</span>
         </div>
       </div>
-
-      {/* Confidence Metrics */}
-      <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] opacity-70 pt-2 border-t">
-        <div>
-          Base: {getDisplayRisk(confidence_metrics.average_probability)}%
-        </div>
-        <div className="text-right">
-          Peak: {getDisplayRisk(confidence_metrics.max_probability)}%
-        </div>
-      </div>
     </div>
   );
 };
