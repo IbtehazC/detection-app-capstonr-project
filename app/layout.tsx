@@ -24,7 +24,7 @@ export default function RootLayout({
       <html lang="en">
         <body className={cn(inter.className, "relative")}>
           <SocketProvider>
-            <main className="flex flex-col min-h-screen bg-secondary">
+            <main className="dark flex flex-col min-h-screen bg-secondary">
               <NavBar />
               <section className="flex-grow">
                 <Container>{children}</Container>

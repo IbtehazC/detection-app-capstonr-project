@@ -117,13 +117,10 @@ const AudioCall = () => {
     formData.append("file", audioBlob, `recording_${Date.now()}.wav`);
 
     try {
-      const response = await fetch(
-        "https://audio-deepfake-detection-793528715646.australia-southeast1.run.app/predict",
-        {
-          method: "POST",
-          body: formData,
-        }
-      );
+      const response = await fetch("http://localhost:5000/predict", {
+        method: "POST",
+        body: formData,
+      });
 
       if (!response.ok) {
         throw new Error("Failed to upload audio");

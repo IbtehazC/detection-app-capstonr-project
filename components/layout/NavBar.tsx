@@ -4,7 +4,7 @@ import { UserButton, useAuth, useClerk } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Button } from "../ui/button";
 import Container from "./Container";
-import { Video } from "lucide-react";
+import { Shield, Video } from "lucide-react";
 
 const NavBar = () => {
   const router = useRouter();
@@ -16,15 +16,14 @@ const NavBar = () => {
   };
 
   return (
-    <div className="sticky top-0 bg-primary text-primary-foreground shadow-md">
+    <div className="sticky top-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 shadow-lg">
       <Container>
         <div className="flex justify-between items-center h-16">
           <div
             className="flex items-center gap-2 cursor-pointer"
             onClick={() => router.push("/")}
           >
-            <Video className="h-6 w-6" />
-            <div className="font-bold text-xl">AudioGuard</div>
+            <Shield className="dark:text-gray-300 h-6 w-6" />
           </div>
           <div className="flex gap-4 items-center">
             {userId ? (
@@ -42,14 +41,13 @@ const NavBar = () => {
               <>
                 <Button
                   onClick={() => router.push("/sign-in")}
-                  variant="secondary"
                   size="sm"
                 >
                   Sign in
                 </Button>
                 <Button
                   onClick={() => router.push("/sign-up")}
-                  variant="outline"
+                  variant="secondary"
                   size="sm"
                 >
                   Sign up
