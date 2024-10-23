@@ -7,6 +7,9 @@ import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Mic, MicOff, PhoneOff } from "lucide-react";
 import AudioVisualizer from "./AudioVisualizer";
+import DetectionResult from "@/components/DetectionResult";
+import { useDetection } from "@/context/DetectionContext";
+import { useRouter } from "next/navigation";
 
 const AudioCall = () => {
   const { localStream, peer, isCallEnded, ongoingCall, handleHangup } =
@@ -16,11 +19,19 @@ const AudioCall = () => {
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const [detectionResult, setDetectionResult] = useState<{
-    probability: number;
+    deepfake_probability: number;
+    prediction_score: string;
+    confidence_metrics: {
+      average_probability: number;
+      max_probability: number;
+    };
   } | null>(null);
   const localAudioRef = useRef<HTMLAudioElement>(null);
   const remoteAudioRef = useRef<HTMLAudioElement>(null);
+  const router = useRouter();
+  const { addResult, setCallStart, setCallEnd } = useDetection();
 
+  // Handle local and remote audio streams
   useEffect(() => {
     if (localStream && localAudioRef.current) {
       localAudioRef.current.srcObject = localStream;
@@ -28,88 +39,97 @@ const AudioCall = () => {
   }, [localStream]);
 
   useEffect(() => {
-    if (peer && peer.stream && remoteAudioRef.current) {
+    if (peer?.stream && remoteAudioRef.current) {
       remoteAudioRef.current.srcObject = peer.stream;
+      // Start recording when remote stream is available
+      setCallStart();
+      startRecording(peer.stream);
     }
-  }, [peer]);
 
-  useEffect(() => {
-    if (localStream) {
-      startRecording();
-    }
+    // Cleanup when peer stream changes or component unmounts
     return () => {
-      if (recordingIntervalRef.current) {
-        clearInterval(recordingIntervalRef.current);
-      }
-      if (
-        mediaRecorderRef.current &&
-        mediaRecorderRef.current.state === "recording"
-      ) {
-        mediaRecorderRef.current.stop();
-      }
+      stopRecording();
     };
-  }, [localStream]);
+  }, [peer?.stream, setCallStart]);
 
-  const startRecording = () => {
-    if (!localStream) return;
+  const startRecording = (stream: MediaStream) => {
+    if (!stream) return;
+
+    // Stop any existing recording
+    stopRecording();
 
     const startNewRecording = () => {
-      const mediaRecorder = new MediaRecorder(localStream, {
-        mimeType: "audio/webm",
-      });
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = () => {
-        const audioBlob = new Blob(audioChunksRef.current, {
-          type: "audio/webm",
+      try {
+        const mediaRecorder = new MediaRecorder(stream, {
+          mimeType: "audio/webm;codecs=opus",
         });
-        convertToWavAndSend(audioBlob);
-      };
+        mediaRecorderRef.current = mediaRecorder;
+        audioChunksRef.current = [];
 
-      mediaRecorder.start();
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data.size > 0) {
+            audioChunksRef.current.push(event.data);
+          }
+        };
+
+        mediaRecorder.onstop = async () => {
+          if (audioChunksRef.current.length === 0) return;
+
+          const audioBlob = new Blob(audioChunksRef.current, {
+            type: "audio/webm;codecs=opus",
+          });
+
+          try {
+            await convertToWavAndSend(audioBlob);
+          } catch (error) {
+            console.error("Error processing audio chunk:", error);
+          }
+        };
+
+        mediaRecorder.start();
+        console.log("Started recording remote stream");
+      } catch (error) {
+        console.error("Error starting recorder:", error);
+      }
     };
 
     startNewRecording();
 
+    // Set up interval to create new 5-second chunks
     recordingIntervalRef.current = setInterval(() => {
-      if (
-        mediaRecorderRef.current &&
-        mediaRecorderRef.current.state === "recording"
-      ) {
+      if (mediaRecorderRef.current?.state === "recording") {
         mediaRecorderRef.current.stop();
+        startNewRecording();
       }
-      startNewRecording();
     }, 5000);
   };
 
   const stopRecording = () => {
     if (recordingIntervalRef.current) {
       clearInterval(recordingIntervalRef.current);
+      recordingIntervalRef.current = null;
     }
-    if (
-      mediaRecorderRef.current &&
-      mediaRecorderRef.current.state === "recording"
-    ) {
+    if (mediaRecorderRef.current?.state === "recording") {
       mediaRecorderRef.current.stop();
     }
+    mediaRecorderRef.current = null;
   };
 
   const convertToWavAndSend = async (webmBlob: Blob) => {
-    const audioContext = new window.AudioContext();
-    const arrayBuffer = await webmBlob.arrayBuffer();
-    const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+    try {
+      const audioContext = new window.AudioContext();
+      const arrayBuffer = await webmBlob.arrayBuffer();
+      const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
 
-    const wavBuffer = audioBufferToWav(audioBuffer);
-    const wavBlob = new Blob([wavBuffer], { type: "audio/wav" });
+      const wavBuffer = audioBufferToWav(audioBuffer);
+      const wavBlob = new Blob([wavBuffer], { type: "audio/wav" });
 
-    sendAudioToServer(wavBlob);
+      await sendAudioToServer(wavBlob);
+    } catch (error) {
+      console.error("Error converting audio:", error);
+      // Fallback to sending original webm if conversion fails
+      await sendAudioToServer(webmBlob);
+    }
   };
 
   const sendAudioToServer = async (audioBlob: Blob) => {
@@ -130,7 +150,16 @@ const AudioCall = () => {
       console.log("Deep fake detection result:", result);
 
       setDetectionResult({
-        probability: result.deepfake_probability,
+        deepfake_probability: result.deepfake_probability,
+        prediction_score: result.prediction_score,
+        confidence_metrics: result.confidence_metrics,
+      });
+
+      addResult({
+        timestamp: new Date().toISOString(),
+        deepfake_probability: result.deepfake_probability,
+        prediction_score: result.prediction_score,
+        confidence_metrics: result.confidence_metrics,
       });
     } catch (error) {
       console.error("Error uploading audio chunk:", error);
@@ -145,6 +174,15 @@ const AudioCall = () => {
     }
   };
 
+  const handleEndCall = () => {
+    stopRecording();
+    setCallEnd(); 
+    handleHangup({
+      ongoingCall: ongoingCall ? ongoingCall : undefined,
+    });
+    router.push("/calls/summary");
+  };
+
   if (isCallEnded) {
     return <div className="mt-5 text-rose-500">Call Ended</div>;
   }
@@ -154,9 +192,11 @@ const AudioCall = () => {
   return (
     <Card className="w-full max-w-md mx-auto">
       <CardHeader>
-        <CardTitle>Audio Call</CardTitle>
+        <CardTitle>
+          In Call:
+        </CardTitle>
       </CardHeader>
-      <CardContent>
+      <CardContent className="space-y-6">
         <audio
           ref={localAudioRef}
           autoPlay
@@ -166,42 +206,45 @@ const AudioCall = () => {
           ref={remoteAudioRef}
           autoPlay
         />
-        <div className="mb-4">
-          <AudioVisualizer stream={localStream} />
-          {peer && peer.stream && <AudioVisualizer stream={peer.stream} />}
+
+        <div className="space-y-4">
+          {peer?.stream && (
+            <div className="relative border rounded-lg p-4 bg-secondary/5">
+              <div className="text-sm font-medium mb-2">Remote Audio</div>
+              <AudioVisualizer stream={peer.stream} />
+            </div>
+          )}
         </div>
-        <div className="flex justify-center space-x-4 mb-6">
+
+        <div className="flex justify-center space-x-4">
           <Button
             variant={isMicOn ? "default" : "secondary"}
             onClick={toggleAudio}
+            size="icon"
+            className="w-12 h-12"
           >
-            {isMicOn ? <Mic /> : <MicOff />}
+            {isMicOn ? (
+              <Mic className="h-6 w-6" />
+            ) : (
+              <MicOff className="h-6 w-6" />
+            )}
           </Button>
           <Button
             variant="destructive"
-            onClick={() => {
-              stopRecording();
-              handleHangup({
-                ongoingCall: ongoingCall ? ongoingCall : undefined,
-              });
-            }}
+            onClick={handleEndCall}
+            size="icon"
+            className="w-12 h-12"
           >
-            <PhoneOff />
+            <PhoneOff className="h-6 w-6" />
           </Button>
         </div>
+
         {detectionResult && (
-          <div>
-            <h3 className="text-lg font-semibold mb-2">
-              Deep Fake Probability
-            </h3>
-            <Progress
-              value={detectionResult.probability * 100}
-              className="w-full"
-            />
-            <p className="text-sm text-gray-500 mt-1">
-              {(detectionResult.probability * 100).toFixed(2)}%
-            </p>
-          </div>
+          <DetectionResult
+            probability={detectionResult.deepfake_probability}
+            prediction_score={detectionResult.prediction_score}
+            confidence_metrics={detectionResult.confidence_metrics}
+          />
         )}
       </CardContent>
     </Card>

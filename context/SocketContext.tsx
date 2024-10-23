@@ -26,6 +26,22 @@ interface iSocketContext {
   stopRecording: () => void;
 }
 
+interface CallSummary {
+  participantName: string;
+  duration: number;
+  startTime: string;
+  endTime: string;
+  detectionResults: Array<{
+    timestamp: string;
+    prediction_score: string;
+    probability: number;
+    confidence_metrics: {
+      average_probability: number;
+      max_probability: number;
+    };
+  }>;
+}
+
 export const SocketContext = createContext<iSocketContext | null>(null);
 
 export const SocketContextProvider = (props: Props) => {
@@ -187,55 +203,65 @@ export const SocketContextProvider = (props: Props) => {
     [localStream, createPeer, peer, ongoingCall]
   );
 
-  const handleCall = useCallback(async (user: SocketUser) => {
-    setIsCallEnded(false);
-    if (!currentSocketUser) return;
-    if (ongoingCall) return alert("Already in another call");
+  const handleCall = useCallback(
+    async (user: SocketUser) => {
+      setIsCallEnded(false);
+      if (!currentSocketUser) return;
+      if (ongoingCall) return alert("Already in another call");
 
-    const stream = await getMediaStream();
-    if (!stream) return;
+      const stream = await getMediaStream();
+      if (!stream) return;
 
-    const participants = { caller: currentSocketUser, receiver: user };
-    setOngoingCall({
-      participants,
-      isRinging: true,
-    });
-    socket?.emit("call", participants);
-    router.push("/calls");
-  }, [socket, currentSocketUser, ongoingCall, router]);
+      const participants = { caller: currentSocketUser, receiver: user };
+      setOngoingCall({
+        participants,
+        isRinging: true,
+      });
+      socket?.emit("call", participants);
+      router.push("/calls");
+    },
+    [socket, currentSocketUser, ongoingCall, router]
+  );
 
-  const handleJoinCall = useCallback(async (ongoingCall: OngoingCall) => {
-    setIsCallEnded(false);
-    setOngoingCall(prev => {
-      if (prev) {
-        return { ...prev, isRinging: false };
-      } else return prev;
-    });
-    
-    socket?.emit("callAccepted", { ongoingCall });
-    
-    const stream = await getMediaStream();
-    if (!stream) return;
+  const handleJoinCall = useCallback(
+    async (ongoingCall: OngoingCall) => {
+      setIsCallEnded(false);
+      setOngoingCall((prev) => {
+        if (prev) {
+          return { ...prev, isRinging: false };
+        } else return prev;
+      });
 
-    const newPeer = createPeer(stream!, true, ongoingCall.participants.caller);
-    setPeer({
-      peerConnection: newPeer,
-      participantUser: ongoingCall.participants.caller,
-      stream: undefined,
-    });
+      socket?.emit("callAccepted", { ongoingCall });
 
-    newPeer.on("signal", async (data: SignalData) => {
-      if (socket) {
-        socket.emit("webrtcSignal", {
-          sdp: data,
-          ongoingCall,
-          isCaller: false,
-        });
-      }
-    });
+      const stream = await getMediaStream();
+      if (!stream) return;
 
-    router.push("/calls");
-  }, [socket, getMediaStream, router]);
+      const newPeer = createPeer(
+        stream!,
+        true,
+        ongoingCall.participants.caller
+      );
+      setPeer({
+        peerConnection: newPeer,
+        participantUser: ongoingCall.participants.caller,
+        stream: undefined,
+      });
+
+      newPeer.on("signal", async (data: SignalData) => {
+        if (socket) {
+          socket.emit("webrtcSignal", {
+            sdp: data,
+            ongoingCall,
+            isCaller: false,
+          });
+        }
+      });
+
+      router.push("/calls");
+    },
+    [socket, getMediaStream, router]
+  );
 
   const startRecording = useCallback(() => {
     if (!localStream) {
@@ -313,23 +339,26 @@ export const SocketContextProvider = (props: Props) => {
     };
   }, []);
 
-  const handleHangup = useCallback((data: { ongoingCall?: OngoingCall | null; callEnded?: boolean }) => {
-    if (socket && user && data?.ongoingCall && !data?.callEnded) {
-      socket.emit("hangup", {
-        ongoingCall: data.ongoingCall,
-        userHangingupId: user.id,
-      });
-    }
+  const handleHangup = useCallback(
+    (data: { ongoingCall?: OngoingCall | null; callEnded?: boolean }) => {
+      if (socket && user && data?.ongoingCall && !data?.callEnded) {
+        socket.emit("hangup", {
+          ongoingCall: data.ongoingCall,
+          userHangingupId: user.id,
+        });
+      }
 
-    setOngoingCall(null);
-    setPeer(null);
-    if (localStream) {
-      localStream.getTracks().forEach(track => track.stop());
-      setLocalStream(null);
-    }
-    setIsCallEnded(true);
-    router.push("/dashboard");
-  }, [socket, user, localStream, router]);
+      setOngoingCall(null);
+      setPeer(null);
+      if (localStream) {
+        localStream.getTracks().forEach((track) => track.stop());
+        setLocalStream(null);
+      }
+      setIsCallEnded(true);
+      router.push("/calls/summary");
+    },
+    [socket, user, localStream, router]
+  );
 
   // initialize socket
   useEffect(() => {

@@ -1,65 +1,165 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import {
+  Card,
+  CardContent,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+} from "@/components/ui/card";
+import { Progress } from "@/components/ui/progress";
+import { 
+  Activity,
+  Shield,
+  ShieldAlert,
+  ShieldCheck,
+  AlertCircle,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+
+interface AnalysisResult {
+  timestamp: string;
+  prediction_score: string;
+  probability: number;
+}
 
 const DeepFakeDetection = () => {
-  const [analysisResults, setAnalysisResults] = useState<
-    { timestamp: string; result: boolean }[]
-  >([]);
+  const [analysisResults, setAnalysisResults] = useState<AnalysisResult[]>([]);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
 
   useEffect(() => {
     const analyzeStoredAudio = async () => {
-      // Get all keys from local storage that start with 'audio_'
       const audioKeys = Object.keys(localStorage).filter((key) =>
         key.startsWith("audio_")
       );
 
+      if (audioKeys.length > 0) {
+        setIsAnalyzing(true);
+      }
+
       for (const key of audioKeys) {
         const audioUrl = localStorage.getItem(key);
         if (audioUrl) {
-          // Fetch the audio data
-          const response = await fetch(audioUrl);
-          const audioBlob = await response.blob();
+          try {
+            const response = await fetch(audioUrl);
+            const audioBlob = await response.blob();
+            const result = await analyzeAudio(audioBlob);
+            
+            setAnalysisResults((prev) => [
+              {
+                timestamp: new Date().toISOString(),
+                prediction_score: result.score,
+                probability: result.probability,
+              },
+              ...prev.slice(0, 9), // Keep only last 10 results
+            ]);
 
-          // Here, you would send the audioBlob to your ML model
-          // For now, we'll use a placeholder function
-          const isDeepFake = await analyzeAudio(audioBlob);
-
-          setAnalysisResults((prev) => [
-            ...prev,
-            { timestamp: key.split("_")[1], result: isDeepFake },
-          ]);
-
-          // Remove the analyzed audio from local storage
-          localStorage.removeItem(key);
+            localStorage.removeItem(key);
+          } catch (error) {
+            console.error("Error analyzing audio:", error);
+          }
         }
       }
+
+      setIsAnalyzing(false);
     };
 
-    const intervalId = setInterval(analyzeStoredAudio, 10000); // Run every 10 seconds
-
+    const intervalId = setInterval(analyzeStoredAudio, 10000);
     return () => clearInterval(intervalId);
   }, []);
 
-  // Placeholder function for audio analysis
-  const analyzeAudio = async (audioBlob: Blob): Promise<boolean> => {
-    // This is where you would integrate your ML model
-    // For now, we'll return a random result
-    return Math.random() > 0.5;
+  // Placeholder function - replace with actual ML model integration
+  const analyzeAudio = async (audioBlob: Blob) => {
+    // Simulated analysis - replace with actual ML model call
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const probability = 0.5 + (Math.random() * 0.4); // Random value between 0.5 and 0.9
+    
+    return {
+      probability,
+      score: probability > 0.75 ? "Likely Fake" :
+             probability > 0.70 ? "Possibly Fake" :
+             probability > 0.65 ? "Uncertain" :
+             probability > 0.60 ? "Possibly Real" :
+                                "Likely Real"
+    };
+  };
+
+  const getStatusColor = (probability: number): string => {
+    if (probability > 0.75) return "text-red-500";
+    if (probability > 0.70) return "text-orange-500";
+    if (probability > 0.65) return "text-yellow-500";
+    if (probability > 0.60) return "text-emerald-500";
+    return "text-green-500";
+  };
+
+  const getStatusIcon = (probability: number) => {
+    if (probability > 0.70) {
+      return <ShieldAlert className="h-4 w-4" />;
+    } else if (probability < 0.60) {
+      return <ShieldCheck className="h-4 w-4" />;
+    }
+    return <Shield className="h-4 w-4" />;
   };
 
   return (
-    <div>
-      <h2>Deep Fake Detection Results</h2>
-      <ul>
-        {analysisResults.map((result, index) => (
-          <li key={index}>
-            {result.timestamp}:{" "}
-            {result.result ? "Potential Deep Fake" : "Likely Authentic"}
-          </li>
-        ))}
-      </ul>
-    </div>
+    <Card>
+      <CardHeader>
+        <div className="flex items-center space-x-2">
+          <Activity className="h-4 w-4 text-primary" />
+          <CardTitle>Detection History</CardTitle>
+        </div>
+        <CardDescription>
+          Real-time deep fake analysis results
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {isAnalyzing && (
+          <div className="flex items-center justify-center py-2 text-sm text-muted-foreground">
+            <AlertCircle className="h-4 w-4 mr-2 animate-pulse" />
+            Analyzing audio...
+          </div>
+        )}
+        
+        <div className="space-y-2">
+          {analysisResults.map((result, index) => (
+            <div
+              key={index}
+              className={cn(
+                "flex items-center justify-between p-3 rounded-lg border",
+                "transition-colors duration-200",
+                index === 0 ? "bg-muted/50" : "bg-background"
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <span className={getStatusColor(result.probability)}>
+                  {getStatusIcon(result.probability)}
+                </span>
+                <div>
+                  <p className="text-sm font-medium">
+                    {result.prediction_score}
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {new Date(result.timestamp).toLocaleTimeString()}
+                  </p>
+                </div>
+              </div>
+              <Progress 
+                value={((result.probability - 0.5) / 0.4) * 100}
+                className="w-24 h-1.5"
+              />
+            </div>
+          ))}
+
+          {analysisResults.length === 0 && (
+            <div className="text-center py-8 text-muted-foreground">
+              <Shield className="h-8 w-8 mx-auto mb-2 opacity-50" />
+              <p className="text-sm">No detection results yet</p>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
   );
 };
 

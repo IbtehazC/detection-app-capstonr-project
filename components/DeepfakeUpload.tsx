@@ -3,12 +3,17 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress"; // Assuming you have a Progress component
+import DetectionResult from "./DetectionResult";
 
 const DeepFakeUpload = () => {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [detectionResult, setDetectionResult] = useState<{
     deepfake_probability: number;
-    is_deepfake: boolean;
+    prediction_score: string;
+    confidence_metrics: {
+      average_probability: number;
+      max_probability: number;
+    };
   } | null>(null);
   const [isUploading, setIsUploading] = useState<boolean>(false);
 
@@ -48,7 +53,8 @@ const DeepFakeUpload = () => {
       console.log(result);
       setDetectionResult({
         deepfake_probability: result.deepfake_probability,
-        is_deepfake: result.is_deepfake,
+        prediction_score: result.prediction_score,
+        confidence_metrics: result.confidence_metrics,
       });
     } catch (error) {
       console.error("Error uploading file:", error);
@@ -89,32 +95,11 @@ const DeepFakeUpload = () => {
       {detectionResult && (
         <div className="mt-6">
           {/* Display the detection result message */}
-          <h3 className="text-lg font-semibold mb-2">
-            {detectionResult.is_deepfake
-              ? "The audio is probably fake"
-              : "The audio is probably real"}
-          </h3>
-
-          {/* Progress Bar showing deepfake probability */}
-          <Progress
-            value={detectionResult.deepfake_probability * 100}
-            className="w-full"
+          <DetectionResult
+            probability={detectionResult.deepfake_probability}
+            prediction_score={detectionResult.prediction_score}
+            confidence_metrics={detectionResult.confidence_metrics}
           />
-          <p className="text-sm text-gray-500 mt-1">
-            Deepfake Probability:{" "}
-            {(detectionResult.deepfake_probability * 100).toFixed(2)}%
-          </p>
-
-          {/* Indicator box for Deepfake or Real */}
-          <div
-            className={`mt-4 px-4 py-2 rounded-lg ${
-              detectionResult.is_deepfake
-                ? "bg-red-100 text-red-800"
-                : "bg-green-100 text-green-800"
-            }`}
-          >
-            {detectionResult.is_deepfake ? "Deepfake" : "Real"}
-          </div>
         </div>
       )}
     </div>
