@@ -61,9 +61,25 @@ const DetectionResult = ({
     return <AlertTriangle className="h-4 w-4" />;
   };
 
-  const getScaledProgress = (value: number): number => {
-    const scaled = ((value - 0.5) / 0.3) * 100;
-    return Math.max(0, Math.min(100, scaled));
+  const getRiskPercentage = (value: number): number => {
+    // Scale from 0.5-0.7 to 0-100
+    const minVal = 0.5;
+    const maxVal = 0.7;
+
+    // Clamp the input value between minVal and maxVal
+    const clampedValue = Math.min(Math.max(value, minVal), maxVal);
+
+    // Calculate percentage
+    const percentage = ((clampedValue - minVal) / (maxVal - minVal)) * 100;
+
+    // Round to one decimal place
+    return Math.round(percentage * 10) / 10;
+  };
+
+  const getDisplayRisk = (value: number): number => {
+    if (value <= 0.5) return 0;
+    if (value >= 0.7) return 100;
+    return getRiskPercentage(value);
   };
 
   return (
@@ -80,14 +96,14 @@ const DetectionResult = ({
           <span className="font-medium text-sm">{prediction_score}</span>
         </div>
         <div className="text-xs font-medium">
-          Risk Level: {((probability - 0.5) * 200).toFixed(0)}%
+          Risk Level: {getDisplayRisk(probability)}%
         </div>
       </div>
 
       {/* Progress Bar */}
       <div className="space-y-1">
         <Progress
-          value={getScaledProgress(probability)}
+          value={getDisplayRisk(probability)}
           className="h-1.5"
         >
           <div
@@ -96,14 +112,24 @@ const DetectionResult = ({
               getProgressColor(prediction_score)
             )}
             style={{
-              width: `${getScaledProgress(probability)}%`,
+              width: `${getDisplayRisk(probability)}%`,
               borderRadius: "inherit",
             }}
           />
         </Progress>
         <div className="flex justify-between text-[10px] opacity-70">
-          <span>Safe</span>
-          <span>Risk</span>
+          <span>Authentic</span>
+          <span>Synthetic</span>
+        </div>
+      </div>
+
+      {/* Confidence Metrics */}
+      <div className="mt-2 grid grid-cols-2 gap-2 text-[10px] opacity-70 pt-2 border-t">
+        <div>
+          Base: {getDisplayRisk(confidence_metrics.average_probability)}%
+        </div>
+        <div className="text-right">
+          Peak: {getDisplayRisk(confidence_metrics.max_probability)}%
         </div>
       </div>
     </div>
